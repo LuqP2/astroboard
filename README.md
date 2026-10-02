@@ -59,9 +59,10 @@ O workflow `.github/workflows/deploy-pages.yml` compila e publica o site automat
 - Centro vazio oculta as divisões dentro do círculo central. As linhas dos aspectos ficam por cima e continuam visíveis. Essa opção também é salva na aula.
 - O slider Tamanho do centro ajusta o círculo em tempo real. Soltar o controle registra uma alteração para Desfazer; o tamanho é salvo na aula.
 - Ocultar não apaga. Trocar modelos preserva planetas e aspectos, inclusive os objetos do anel externo.
-- Salvar aula baixa um arquivo `.astro.json`; Abrir aula carrega um arquivo escolhido pelo usuário.
+- Salvar baixa um arquivo `.astro.json`; Carregar carrega um arquivo escolhido pelo usuário.
 - A última sessão é guardada no armazenamento deste navegador. Salve um arquivo para ter uma cópia independente; limpar os dados do navegador elimina essa recuperação.
 - Exportar imagem gera PNG. Apresentar recolhe painéis; não usa a tela cheia do sistema. Escape volta a editar.
+- As setas ao lado de **Planetas** e **Exibição** recolhem cada lateral independentemente. Quando recolhida, a lateral mantém uma seta para reabrir, liberando espaço sem alterar a aula.
 - Desfazer/refazer guarda até 80 alterações nesta sessão; o histórico não é salvo entre aberturas.
 
 Os graus são informados dentro do signo, de **0 até menos de 30**. Por exemplo: Escorpião, `15,5` graus.
@@ -72,7 +73,7 @@ Atalhos opcionais: `Ctrl+Z` para desfazer, `Ctrl+Shift+Z` para refazer e `Delete
 
 ## Dados locais
 
-As aulas são processadas no navegador e não são enviadas a um servidor. A sessão automática pertence ao navegador e ao endereço utilizado. Mudar de navegador ou endereço pode impedir sua recuperação. Use **Salvar aula** para guardar uma cópia independente.
+As aulas são processadas no navegador e não são enviadas a um servidor. A sessão automática pertence ao navegador e ao endereço utilizado. Mudar de navegador ou endereço pode impedir sua recuperação. Use **Salvar** para guardar uma cópia independente.
 
 ## Escopo e evolução
 
