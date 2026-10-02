@@ -42,3 +42,15 @@ test('maximum supported board still returns every selectable label', () => {
   assert.equal(layout.size, 200);
   assert.ok([...layout.values()].every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
 });
+test('planet size changes label bounds without changing input longitudes', () => {
+  const input = planets([0, 72, 144, 216, 288]);
+  const original = structuredClone(input);
+  const small = layoutLabels(input, {...options,scale:.6});
+  const large = layoutLabels(input, {...options,scale:1.6});
+  assertSeparated(small);assertSeparated(large);
+  for (const planet of input) {
+    const a=small.get(planet.id).box,b=large.get(planet.id).box;
+    assert.ok(b.right-b.left > a.right-a.left);
+  }
+  assert.deepEqual(input,original);
+});
