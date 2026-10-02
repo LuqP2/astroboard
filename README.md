@@ -4,6 +4,8 @@ Uma mandala astrológica interativa para construir exemplos durante as aulas. Co
 
 A versão atual funciona no navegador, com interface em português e alternativas ao arraste para facilitar o uso com touchpad.
 
+**[Abrir Astroboard no navegador](https://luqp2.github.io/astroboard/)** — sem instalação ou terminal.
+
 ## Recursos
 
 - **Quatro modelos:** círculo vazio, quatro partes, doze setores iguais e dois mapas (biwheel).
@@ -41,7 +43,9 @@ npm run build
 npm run preview
 ```
 
-O build verifica o TypeScript e produz arquivos estáticos em `dist/`. O preview serve esse build localmente no endereço mostrado pelo Vite. A versão atual usa um servidor local; ainda não é um instalador nem uma PWA.
+O build verifica o TypeScript e produz arquivos estáticos em `dist/`. O preview serve esse build localmente em `/astroboard/`. O desenvolvimento usa um servidor local; a versão publicada funciona diretamente no GitHub Pages. Ainda não é um instalador nem uma PWA.
+
+O workflow `.github/workflows/deploy-pages.yml` compila e publica o site automaticamente a cada push na `main`. O Vite usa `/astroboard/` como caminho base de produção e `/` no desenvolvimento.
 
 ## Durante a aula
 
@@ -50,6 +54,7 @@ O build verifica o TypeScript e produz arquivos estáticos em `dist/`. O preview
 - Ligar planetas conecta dois símbolos com uma linha manual. O tipo é escolhido pela professora; não há identificação automática de ângulos ou orbes.
 - Dois mapas separa mapa-base e trânsitos. Escolha o anel na lateral antes de colocar o símbolo.
 - Ao selecionar um planeta, escolha seu signo e grau (de 0 até menos de 30) e clique em Aplicar. Decimais com vírgula ou ponto são aceitos.
+- Os graus dentro do signo aparecem abaixo de cada planeta e acompanham sua posição. Aplicar uma posição ativa sua exibição; use **Graus dos planetas** para mostrar ou esconder os valores. Essa opção é salva na aula e também vale para o PNG.
 - A rotação move apenas as casas, em passos de 15 graus. Signos e planetas ficam fixos. O controle Início da casa 1 define diretamente o signo e grau da primeira cúspide.
 - Centro vazio oculta as divisões dentro do círculo central. As linhas dos aspectos ficam por cima e continuam visíveis. Essa opção também é salva na aula.
 - O slider Tamanho do centro ajusta o círculo em tempo real. Soltar o controle registra uma alteração para Desfazer; o tamanho é salvo na aula.
