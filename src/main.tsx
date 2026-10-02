@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { layoutLabels } from './labelLayout.js';
+import { angleParts, degreeLabel } from './angleFormat.js';
 const ELEMENT_COLORS = ['#b85e43', '#57745c', '#a27b2f', '#477f9b'];
 
 const PLANETS = [ ['sun','☉','Sol'], ['moon','☽','Lua'], ['mercury','☿','Mercúrio'], ['venus','♀','Vênus'], ['mars','♂','Marte'], ['jupiter','♃','Júpiter'], ['saturn','♄','Saturno'], ['uranus','♅','Urano'], ['neptune','♆','Netuno'], ['pluto','⯓','Plutão'] ] as const;
@@ -14,13 +15,14 @@ type AspectStyle = keyof typeof STYLES;
 type Planet = { id: string; kind: string; angle: number; ring: Ring };
 type Aspect = { id: string; from: string; to: string; style: AspectStyle };
 type Board = { version: 1; model: Model; rotation: number; centerRadius: number; planets: Planet[]; aspects: Aspect[]; visible: { signs: boolean; houses: boolean; numbers: boolean; planets: boolean; aspects: boolean; degrees: boolean; center: boolean; planetDegrees: boolean } };
-const fresh = (): Board => ({ version: 1, model: 'empty', rotation: 0, centerRadius: 100, planets: [], aspects: [], visible: { signs: false, houses: false, numbers: false, planets: true, aspects: true, degrees: false, center: true, planetDegrees: true } });
+const HOUSE_ORIGIN = 270; // Ascendant: left-hand horizon.
+const fresh = (): Board => ({ version: 1, model: 'empty', rotation: HOUSE_ORIGIN, centerRadius: 100, planets: [], aspects: [], visible: { signs: false, houses: false, numbers: false, planets: true, aspects: true, degrees: false, center: true, planetDegrees: true } });
 // Keep the original key so renaming the app preserves existing browser sessions.
 const KEY = 'astroativo.session.v1';
+const mandalaDegreeLabel = (angle: number) => { const { degrees, minutes } = angleParts(angle); return `${degrees}° ${String(minutes).padStart(2, '0')}′`; };
 const norm = (n: number) => ((n % 360) + 360) % 360;
 const polar = (a: number, r: number) => ({ x: 400 + Math.cos((a - 90) * Math.PI / 180) * r, y: 400 + Math.sin((a - 90) * Math.PI / 180) * r });
 const info = (kind: string) => PLANETS.find(p => p[0] === kind)!;
-const degreeLabel = (angle: number) => `${(Math.floor(norm(angle) % 30 * 1000) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}°`;
 function validate(value: unknown): Board {
   const d = value as Board;
   if (!d || d.version !== 1 || !['empty','four','twelve','biwheel'].includes(d.model) || !Number.isFinite(d.rotation) || !Array.isArray(d.planets) || !Array.isArray(d.aspects) || !d.visible) throw Error('Formato de aula inválido.');
@@ -30,7 +32,7 @@ function validate(value: unknown): Board {
   for (const p of d.planets) { if (!p || typeof p.id !== 'string' || ids.has(p.id) || !PLANETS.some(v => v[0] === p.kind) || !Number.isFinite(p.angle) || !['base','transit'].includes(p.ring)) throw Error('Planeta inválido.'); ids.add(p.id); }
   const aspectIds = new Set<string>();
   for (const a of d.aspects) { if (!a || typeof a.id !== 'string' || aspectIds.has(a.id) || !ids.has(a.from) || !ids.has(a.to) || a.from === a.to || !Object.hasOwn(STYLES,a.style)) throw Error('Aspecto inválido.'); aspectIds.add(a.id); }
-  return { ...d, centerRadius: d.centerRadius ?? 100, visible: { ...fresh().visible, ...d.visible }, rotation: norm(d.rotation), planets: d.planets.map(p => ({...p, angle: norm(p.angle)})) };
+  return { ...d, centerRadius: d.centerRadius ?? 100, visible: { ...fresh().visible, ...d.visible }, rotation: HOUSE_ORIGIN, planets: d.planets.map(p => ({...p, angle: norm(p.angle)})) };
 }
 function initial() { try { const raw = localStorage.getItem(KEY); return raw ? validate(JSON.parse(raw)) : fresh(); } catch { return fresh(); } }
 function download(blob: Blob, name: string) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -42,18 +44,33 @@ function PlutoGlyph({ x = 0, y = 0, color = 'currentColor' }: { x?: number; y?: 
   </g>;
 }
 
-function AngleEditor({ angle, label, onApply }: { angle: number; label: string; onApply: (angle: number) => void }) {
-  const [sign, setSign] = useState(Math.floor(norm(angle) / 30));
-  const [degrees, setDegrees] = useState(String(Math.floor(norm(angle) % 30 * 1000) / 1000));
+function AngleEditor({ angle, label, onApply, confirmRef }: { angle: number; label: string; onApply: (angle: number) => void; confirmRef?: React.Ref<{ apply: () => boolean }> }) {
+  const initialParts = angleParts(angle);
+  const [sign, setSign] = useState(initialParts.sign);
+  const [degrees, setDegrees] = useState(String(initialParts.degrees));
+  const [minutes, setMinutes] = useState(String(initialParts.minutes));
+  const [seconds, setSeconds] = useState(String(initialParts.seconds));
   const [error, setError] = useState('');
-  return <form className="angle-editor" aria-label={label} onSubmit={e => {
-    e.preventDefault();
-    const value = Number(degrees.trim().replace(',', '.'));
-    if (!degrees.trim() || !Number.isFinite(value) || value < 0 || value >= 30) { setError('Use um grau de 0 até menos de 30.'); return; }
-    setError(''); onApply(sign * 30 + value);
-  }}>
+  const apply = () => {
+    const values = [degrees, minutes, seconds].map(value => Number(value.trim()));
+    if ([degrees,minutes,seconds].some(value => !/^\d+$/.test(value.trim())) || values.some((value,i) => !Number.isInteger(value) || value < 0 || value >= (i===0 ? 30 : 60))) {
+      setError('Use graus de 0 a 29, minutos e segundos de 0 a 59.'); return false;
+    }
+    setError('');
+    // Merely opening and closing the editor must preserve sub-second precision.
+    if (sign !== initialParts.sign || values[0] !== initialParts.degrees || values[1] !== initialParts.minutes || values[2] !== initialParts.seconds) {
+      onApply(sign * 30 + values[0] + values[1] / 60 + values[2] / 3600);
+    }
+    return true;
+  };
+  useImperativeHandle(confirmRef, () => ({ apply }));
+  return <form className="angle-editor" aria-label={label} onSubmit={e => { e.preventDefault(); apply(); }}>
     <label>Signo<select value={sign} onChange={e => setSign(Number(e.target.value))}>{SIGN_NAMES.map((name, i) => <option key={name} value={i}>{name}</option>)}</select></label>
-    <label>Graus<input type="text" inputMode="decimal" value={degrees} aria-invalid={!!error} onChange={e => { setDegrees(e.target.value); setError(''); }}/></label>
+    <div className="dms-fields">
+      <label>Graus °<input type="text" inputMode="numeric" value={degrees} aria-invalid={!!error} onChange={e => { setDegrees(e.target.value); setError(''); }}/></label>
+      <label>Minutos ′<input type="text" inputMode="numeric" value={minutes} aria-invalid={!!error} onChange={e => { setMinutes(e.target.value); setError(''); }}/></label>
+      <label>Segundos ″<input type="text" inputMode="numeric" value={seconds} aria-invalid={!!error} onChange={e => { setSeconds(e.target.value); setError(''); }}/></label>
+    </div>
     <button type="submit">Aplicar</button>
     {error && <span className="field-error" role="alert">{error}</span>}
   </form>;
@@ -73,6 +90,7 @@ function App() {
   const [board,setBoard] = useState<Board>(initial);
   const [past,setPast] = useState<Board[]>([]); const [future,setFuture] = useState<Board[]>([]);
   const [pending,setPending] = useState<string | null>(null);
+  const selectionConfirmRef = useRef<{apply:()=>boolean}>(null);
   const [selected,setSelected] = useState<string | null>(null);
   const [mode,setMode] = useState<'move'|'aspect'>('move');
   const [first,setFirst] = useState<string | null>(null);
@@ -103,7 +121,7 @@ function App() {
   const radius = (r: Ring) => board.model === 'biwheel' ? (r === 'base' ? 210 : 270) : 255;
   const point = (p: Planet) => polar(p.angle, radius(p.ring));
   const renderedPlanets = board.planets.map(p => preview?.id === p.id ? {...p,angle:preview.angle} : p);
-  const labelPositions = layoutLabels(renderedPlanets, { biwheel: board.model === 'biwheel', center: board.visible.center ? centerRadius : 0, degrees: board.visible.planetDegrees, formatDegree: degreeLabel });
+  const labelPositions = layoutLabels(renderedPlanets, { biwheel: board.model === 'biwheel', center: board.visible.center ? centerRadius : 0, degrees: board.visible.planetDegrees, formatDegree: mandalaDegreeLabel });
   function position(clientX: number, clientY: number) {
     const el = svgRef.current; if (!el) return null;
     const matrix = el.getScreenCTM(); if (!matrix) return null;
@@ -147,6 +165,17 @@ function App() {
     const key=(e:KeyboardEvent)=> { if(e.key==='Escape' && presentation){setPresentation(false);return;} if(presentation || (e.target as HTMLElement).matches('input,select,textarea')) return; if(e.key==='Escape'){if(presentation){setPresentation(false);}else{clearAction();setMode('move');}} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();} if(e.key==='Delete')remove(); };
     window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
   });
+  useEffect(() => {
+    const confirmOutside = (event: PointerEvent) => {
+      if (!selected || presentation || event.button !== 0) return;
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest('.selection-bar, [data-board-item]')) return;
+      if (selectionConfirmRef.current && !selectionConfirmRef.current.apply()) return;
+      setSelected(null);
+    };
+    document.addEventListener('pointerdown', confirmOutside, true);
+    return () => document.removeEventListener('pointerdown', confirmOutside, true);
+  }, [selected,presentation]);
   const changeModel = (model: Model) => { commit({...board,model,visible:{...board.visible,houses:model==='four'||model==='twelve'||model==='biwheel',numbers:model==='twelve'||model==='biwheel'}});clearAction();setRing('base'); };
   const save = () => { download(new Blob([JSON.stringify(board,null,2)],{type:'application/json'}),'aula.astro.json');setMessage('Arquivo de aula enviado para os downloads do navegador.'); };
   async function load(file?: File) { if(!file)return;try {if(file.size>2_000_000)throw Error('Arquivo muito grande.');const next=validate(JSON.parse(await file.text()));commit(next);clearAction();setMessage('Aula aberta. Desfazer recupera o quadro anterior.');}catch{setMessage('Não foi possível abrir. Escolha um arquivo de aula salvo pelo Astroboard.');}finally{if(fileRef.current)fileRef.current.value='';} }
@@ -176,11 +205,11 @@ function App() {
       {board.model==='biwheel'&&<div className="ring-choice"><button className={ring==='base'?'active':''} onClick={()=>setRing('base')}>Mapa-base · interno</button><button className={ring==='transit'?'active transit':''} onClick={()=>setRing('transit')}>Trânsitos · externo</button></div>}
       <div className="planet-list">{PLANETS.map(([kind,symbol,name])=><button key={kind} className={`planet-choice ${pending===kind?'active':''}`} aria-pressed={pending===kind} onPointerDown={e=>{if(e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);dragRef.current={kind,startX:e.clientX,startY:e.clientY,moved:false,ring};}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setPending(kind);setSelected(null);setMode('move');setFirst(null);}}}><span className="glyph">{kind==='pluto'?<svg className="pluto-symbol" viewBox="-20 -22 40 44" aria-hidden="true"><PlutoGlyph/></svg>:symbol}</span><span>{name}</span><span className="add-sign">+</span></button>)}</div>
       <div className="selection-heading"><span className="eyebrow">PROPRIEDADES</span></div>
-      {selected?<div className="selection-bar"><strong>{selectedPlanet?info(selectedPlanet.kind)[2]:'Linha de aspecto'}</strong>{selectedPlanet&&<><AngleEditor key={`${selectedPlanet.id}:${selectedPlanet.angle}`} label={`Posição de ${info(selectedPlanet.kind)[2]}`} angle={selectedPlanet.angle} onApply={angle=>{commit({...board,planets:board.planets.map(p=>p.id===selectedPlanet.id?{...p,angle}:p)});setPending(null);setMessage('');}}/><button onClick={()=>{setPending(selectedPlanet.kind);setMode('move');setFirst(null);setMessage('');}}>Reposicionar</button></>}<button className="danger" onClick={remove}>Remover</button><button onClick={clearAction}>Concluir</button></div>:<div className="selection-empty"><span className="empty-orbit">◎</span><h3>Seu quadro, passo a passo</h3><p>Arraste um planeta para a mandala ou escolha um planeta e clique na posição desejada.</p></div>}
+      {selected?<div className="selection-bar"><strong>{selectedPlanet?info(selectedPlanet.kind)[2]:'Linha de aspecto'}</strong>{selectedPlanet&&<><AngleEditor confirmRef={selectionConfirmRef} key={`${selectedPlanet.id}:${selectedPlanet.angle}`} label={`Posição de ${info(selectedPlanet.kind)[2]}`} angle={selectedPlanet.angle} onApply={angle=>{commit({...board,planets:board.planets.map(p=>p.id===selectedPlanet.id?{...p,angle}:p)});setPending(null);setMessage('');}}/></>}{!selectedPlanet&&<button className="danger" onClick={remove}>Remover</button>}</div>:<div className="selection-empty"><span className="empty-orbit">◎</span><h3>Seu quadro, passo a passo</h3><p>Arraste um planeta para a mandala ou escolha um planeta e clique na posição desejada.</p></div>}
     </section>
     <section id="display-panel" role="tabpanel" aria-labelledby="display-tab" hidden={tab!=='display'}>
       <div className="section-heading"><span className="eyebrow">ORGANIZAR O QUADRO</span><h2>Exibição</h2></div>
-<div className="model-list">{([['empty','○','Círculo vazio'],['four','⊕','Quatro partes'],['twelve','✳','Doze partes'],['biwheel','◎','Dois mapas']] as const).map(([key,symbol,label])=><button key={key} className={board.model===key?'active':''} aria-pressed={board.model===key} onClick={()=>changeModel(key)}><span>{symbol}</span>{label}</button>)}</div><h2 className="visibility-title">Mostrar no quadro</h2><div className="toggles">{([['signs','Signos'],['houses','Divisões das casas'],['numbers','Números das casas'],['planets','Planetas'],['planetDegrees','Graus dos planetas'],['aspects','Aspectos'],['degrees','Marcas de graus'],['center','Centro vazio']] as const).map(([key,label])=><label key={key}><input type="checkbox" checked={board.visible[key]??true} onChange={e=>commit({...board,visible:{...board.visible,[key]:e.target.checked}})}/><span>{label}</span></label>)}</div>{board.visible.center&&<label className="center-size"><span>Tamanho do centro<output>{Math.round(centerRadius / 330 * 100)}%</output></span><input type="range" min="40" max="140" step="1" value={centerRadius} aria-label="Tamanho do círculo central" onChange={e=>setCenterDraft(Number(e.target.value))} onPointerUp={e=>resizeCenter(Number(e.currentTarget.value))} onPointerCancel={e=>resizeCenter(Number(e.currentTarget.value))} onKeyUp={e=>resizeCenter(Number(e.currentTarget.value))} onBlur={e=>resizeCenter(Number(e.currentTarget.value))}/></label>}{(board.visible.houses||board.visible.numbers)&&<div className="house-position"><h2 className="visibility-title">Início da casa 1</h2><AngleEditor key={board.rotation} label="Início da casa 1" angle={board.rotation} onApply={rotation=>commit({...board,rotation})}/><div className="house-rotation"><button aria-label="Girar casas 15 graus para a esquerda" onClick={()=>commit({...board,rotation:norm(board.rotation-15)})}>↶ 15°</button><button aria-label="Girar casas 15 graus para a direita" onClick={()=>commit({...board,rotation:norm(board.rotation+15)})}>15° ↷</button><button onClick={()=>commit({...board,rotation:0})}>Restaurar</button></div></div>}
+<div className="model-list">{([['empty','○','Círculo vazio'],['four','⊕','Quatro partes'],['twelve','✳','Doze partes'],['biwheel','◎','Dois mapas']] as const).map(([key,symbol,label])=><button key={key} className={board.model===key?'active':''} aria-pressed={board.model===key} onClick={()=>changeModel(key)}><span>{symbol}</span>{label}</button>)}</div><h2 className="visibility-title">Mostrar no quadro</h2><div className="toggles">{([['signs','Signos'],['houses','Divisões das casas'],['numbers','Números das casas'],['planets','Planetas'],['planetDegrees','Graus dos planetas'],['aspects','Aspectos'],['degrees','Marcas de graus'],['center','Centro vazio']] as const).map(([key,label])=><label key={key}><input type="checkbox" checked={board.visible[key]??true} onChange={e=>commit({...board,visible:{...board.visible,[key]:e.target.checked}})}/><span>{label}</span></label>)}</div>{board.visible.center&&<label className="center-size"><span>Tamanho do centro<output>{Math.round(centerRadius / 330 * 100)}%</output></span><input type="range" min="40" max="140" step="1" value={centerRadius} aria-label="Tamanho do círculo central" onChange={e=>setCenterDraft(Number(e.target.value))} onPointerUp={e=>resizeCenter(Number(e.currentTarget.value))} onPointerCancel={e=>resizeCenter(Number(e.currentTarget.value))} onKeyUp={e=>resizeCenter(Number(e.currentTarget.value))} onBlur={e=>resizeCenter(Number(e.currentTarget.value))}/></label>}
     </section></ToolSidebar>
     <section className="workspace" aria-label="Quadro astrológico">
       <MapTools mode={mode} style={style} onStyle={setStyle} onMove={()=>{setMode('move');setFirst(null);setPending(null);}} onAspect={()=>{clearAction();setTab('build');setMode('aspect');if(!board.visible.planets)commit({...board,visible:{...board.visible,planets:true}});}} />
@@ -188,14 +217,14 @@ function App() {
         <rect width="800" height="800" fill="#fffdf8"/>
         <circle cx="400" cy="400" r="330" fill="none" stroke="#223f50" strokeWidth="2"/><circle cx="400" cy="400" r="325" fill="none" stroke="#b77948" strokeWidth=".7"/>
         {board.visible.signs&&<><circle cx="400" cy="400" r="292" fill="none" stroke="#b8c3c8"/>{SIGNS.map((s,i)=>{const a=i*30;const p=polar(a,330);const q=polar(a,292);const t=polar(a+15,311);const end=polar(a+30,330);const innerEnd=polar(a+30,292);const color=ELEMENT_COLORS[i%4];return <g key={s}><path d={`M ${p.x} ${p.y} A 330 330 0 0 1 ${end.x} ${end.y} L ${innerEnd.x} ${innerEnd.y} A 292 292 0 0 0 ${q.x} ${q.y} Z`} fill={color} fillOpacity=".09"/><line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="#b8c3c8"/><text x={t.x} y={t.y} textAnchor="middle" dominantBaseline="central" fontSize="28" fill={color} fontFamily="Segoe UI Symbol, DejaVu Sans, sans-serif"><title>{SIGN_NAMES[i]}</title>{s}</text></g>;})}</>}
-        {board.visible.houses&&Array.from({length:board.model==='four'?4:12},(_,i)=>{const a=i*(board.model==='four'?90:30)+board.rotation;const p=polar(a,board.visible.signs?292:330);return <line key={i} x1="400" y1="400" x2={p.x} y2={p.y} stroke="#d5dcd9" strokeWidth="1"/>;})}
-        {board.visible.numbers&&Array.from({length:12},(_,i)=>{const p=polar(i*30+15+board.rotation,Math.max(board.model==='biwheel'?140:170,board.visible.center?centerRadius+18:0));return <text key={i} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize="22" fill="#687d87" fontFamily="Segoe UI, sans-serif">{i+1}</text>;})}
+        {board.visible.houses&&Array.from({length:board.model==='four'?4:12},(_,i)=>{const a=HOUSE_ORIGIN-i*(board.model==='four'?90:30);const p=polar(a,board.visible.signs?292:330);return <line key={i} x1="400" y1="400" x2={p.x} y2={p.y} stroke="#d5dcd9" strokeWidth="1"/>;})}
+        {board.visible.numbers&&Array.from({length:12},(_,i)=>{const p=polar(HOUSE_ORIGIN-(i*30+15),Math.max(board.model==='biwheel'?140:170,board.visible.center?centerRadius+18:0));return <text key={i} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize="22" fill="#687d87" fontFamily="Segoe UI, sans-serif">{i+1}</text>;})}
         {board.visible.degrees&&Array.from({length:72},(_,i)=>{const a=i*5;const p=polar(a,330);const q=polar(a,i%6===0?342:336);return <line key={i} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="#82949b"/>;})}
         {board.model==='biwheel'&&<><circle cx="400" cy="400" r="240" fill="none" stroke="#b8c3c8" strokeDasharray="5 6"/><text x="400" y="76" textAnchor="middle" fill="#ad6338" fontSize="16" fontFamily="Segoe UI, sans-serif">Trânsitos · anel externo</text><text x="400" y="738" textAnchor="middle" fill="#344e5e" fontSize="16" fontFamily="Segoe UI, sans-serif">Mapa-base · anel interno</text></>}
         {board.visible.center ? <circle cx="400" cy="400" r={centerRadius} fill="#fffdf8" stroke="#d5dcd9" strokeWidth="1"/> : <circle cx="400" cy="400" r="4" fill="#b8c3c8"/>}
-        {board.visible.aspects&&board.aspects.map(a=>{const from=board.planets.find(p=>p.id===a.from)!;const to=board.planets.find(p=>p.id===a.to)!;const p=point(preview?.id===from.id?{...from,angle:preview.angle}:from);const q=point(preview?.id===to.id?{...to,angle:preview.angle}:to);const s=STYLES[a.style];return <g key={a.id} role={presentation?undefined:"button"} tabIndex={presentation?-1:0} aria-label={`${s.name}: ${info(from.kind)[2]} e ${info(to.kind)[2]}`} onClick={e=>{e.stopPropagation();if(presentation)return;setSelected(a.id);setPending(null);setTab('build');setMessage('');}} onKeyDown={e=>{if(!presentation&&e.key==='Enter'){setSelected(a.id);setTab('build');}}}><line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={s.color} data-export-stroke="2.3" strokeWidth={!presentation&&selected===a.id?4:2.3} strokeDasharray={s.dash}/><line data-editor="true" x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="transparent" strokeWidth="18" style={{cursor:'pointer'}}/></g>;})}
-        {board.visible.planets&&board.planets.map(original=>{const p=preview?.id===original.id?{...original,angle:preview.angle}:original;const xy=labelPositions.get(p.id)!;const exact=point(p);const color=p.ring==='transit'&&board.model==='biwheel'?'#ad6338':'#284d60';return <g key={p.id} role={presentation?undefined:"button"} tabIndex={presentation?-1:0} aria-label={`${info(p.kind)[2]}, ${p.ring==='transit'?'trânsitos':'mapa-base'}, ${Math.round(p.angle)} graus`} onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(!presentation&&(e.key==='Enter'||e.key===' ')){e.preventDefault();choosePlanet(p.id);}}} onPointerDown={e=>{e.stopPropagation();if(presentation||e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);if(mode==='aspect'){choosePlanet(p.id);return;}dragRef.current={kind:p.kind,id:p.id,startX:e.clientX,startY:e.clientY,moved:false,ring:p.ring};}} style={{cursor:presentation?'default':mode==='aspect'?'pointer':'grab',touchAction:'none'}}>
-          <line x1={exact.x} y1={exact.y} x2={xy.x} y2={xy.y} stroke={color} strokeWidth="1"/><circle cx={exact.x} cy={exact.y} r="3" fill={color}/><circle cx={xy.x} cy={xy.y} r="24" fill="#fffdf8" stroke={color} strokeWidth="1.2"/>{!presentation&&(selected===p.id||first===p.id)&&<circle data-editor="true" cx={xy.x} cy={xy.y} r="28" fill="none" stroke={first===p.id?'#b77948':color} strokeWidth="3" strokeDasharray={first===p.id?'4 3':undefined}/>}{p.kind==='pluto'?<PlutoGlyph x={xy.x} y={xy.y} color={color}/>:<text x={xy.x} y={xy.y+1} textAnchor="middle" dominantBaseline="central" fontSize="33" fill={color} fontFamily="Segoe UI Symbol, DejaVu Sans, sans-serif">{info(p.kind)[1]}</text>}{xy.showDegree&&<text x={xy.x} y={xy.y+40} textAnchor="middle" fontSize="18" fontWeight="600" fill={color} stroke="#fffdf8" strokeWidth="5" strokeLinejoin="round" paintOrder="stroke" fontFamily="Segoe UI, sans-serif">{degreeLabel(p.angle)}</text>}<title>{info(p.kind)[2]}</title>
+        {board.visible.aspects&&board.aspects.map(a=>{const from=board.planets.find(p=>p.id===a.from)!;const to=board.planets.find(p=>p.id===a.to)!;const p=point(preview?.id===from.id?{...from,angle:preview.angle}:from);const q=point(preview?.id===to.id?{...to,angle:preview.angle}:to);const s=STYLES[a.style];return <g key={a.id} data-board-item="true" role={presentation?undefined:"button"} tabIndex={presentation?-1:0} aria-label={`${s.name}: ${info(from.kind)[2]} e ${info(to.kind)[2]}`} onClick={e=>{e.stopPropagation();if(presentation)return;setSelected(a.id);setPending(null);setTab('build');setMessage('');}} onKeyDown={e=>{if(!presentation&&e.key==='Enter'){setSelected(a.id);setTab('build');}}}><line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={s.color} data-export-stroke="2.3" strokeWidth={!presentation&&selected===a.id?4:2.3} strokeDasharray={s.dash}/><line data-editor="true" x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="transparent" strokeWidth="18" style={{cursor:'pointer'}}/></g>;})}
+        {board.visible.planets&&board.planets.map(original=>{const p=preview?.id===original.id?{...original,angle:preview.angle}:original;const xy=labelPositions.get(p.id)!;const exact=point(p);const color=p.ring==='transit'&&board.model==='biwheel'?'#ad6338':'#284d60';return <g key={p.id} data-board-item="true" role={presentation?undefined:"button"} tabIndex={presentation?-1:0} aria-label={`${info(p.kind)[2]}, ${p.ring==='transit'?'trânsitos':'mapa-base'}, ${degreeLabel(p.angle)} de ${SIGN_NAMES[angleParts(p.angle).sign]}`} onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(!presentation&&(e.key==='Enter'||e.key===' ')){e.preventDefault();choosePlanet(p.id);}}} onPointerDown={e=>{e.stopPropagation();if(presentation||e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);if(mode==='aspect'){choosePlanet(p.id);return;}dragRef.current={kind:p.kind,id:p.id,startX:e.clientX,startY:e.clientY,moved:false,ring:p.ring};}} style={{cursor:presentation?'default':mode==='aspect'?'pointer':'grab',touchAction:'none'}}>
+          <line x1={exact.x} y1={exact.y} x2={xy.x} y2={xy.y} stroke={color} strokeWidth="1"/><circle cx={exact.x} cy={exact.y} r="3" fill={color}/><circle cx={xy.x} cy={xy.y} r="24" fill="#fffdf8" stroke={color} strokeWidth="1.2"/>{!presentation&&(selected===p.id||first===p.id)&&<circle data-editor="true" cx={xy.x} cy={xy.y} r="28" fill="none" stroke={first===p.id?'#b77948':color} strokeWidth="3" strokeDasharray={first===p.id?'4 3':undefined}/>}{p.kind==='pluto'?<PlutoGlyph x={xy.x} y={xy.y} color={color}/>:<text x={xy.x} y={xy.y+1} textAnchor="middle" dominantBaseline="central" fontSize="33" fill={color} fontFamily="Segoe UI Symbol, DejaVu Sans, sans-serif">{info(p.kind)[1]}</text>}{xy.showDegree&&<text x={xy.x} y={xy.y+40} textAnchor="middle" fontSize="18" fontWeight="600" fill={color} stroke="#fffdf8" strokeWidth="5" strokeLinejoin="round" paintOrder="stroke" fontFamily="Segoe UI, sans-serif">{mandalaDegreeLabel(p.angle)}</text>}{!presentation&&selected===p.id&&<g data-editor="true" role="button" tabIndex={0} aria-label={`Remover ${info(p.kind)[2]}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();remove();}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();remove();}}} style={{cursor:'pointer'}}><circle cx={xy.x+21} cy={xy.y-21} r="11" fill="#fffdf8" stroke="#b4473b" strokeWidth="1.2"/><path d={`M ${xy.x+17} ${xy.y-25} L ${xy.x+25} ${xy.y-17} M ${xy.x+25} ${xy.y-25} L ${xy.x+17} ${xy.y-17}`} fill="none" stroke="#b4473b" strokeWidth="2" strokeLinecap="round"/></g>}<title>{`${info(p.kind)[2]} · ${degreeLabel(p.angle)} de ${SIGN_NAMES[angleParts(p.angle).sign]}`}</title>
         </g>;})}
         {preview&&!preview.id&&(()=>{const p=polar(preview.angle,radius(preview.ring));return <g data-editor="true" opacity=".7" pointerEvents="none"><circle cx={p.x} cy={p.y} r="26" fill="#e9eee8" stroke="#b77948" strokeWidth="2" strokeDasharray="4 3"/>{preview.kind==='pluto'?<PlutoGlyph x={p.x} y={p.y}/>:<text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize="33" fontFamily="Segoe UI Symbol, sans-serif">{info(preview.kind)[1]}</text>}</g>;})()}
       </svg></MandalaCanvas></div>
