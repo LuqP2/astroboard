@@ -54,3 +54,14 @@ test('planet size changes label bounds without changing input longitudes', () =>
   }
   assert.deepEqual(input,original);
 });
+test('individual sizes multiply the global scale and preserve proportions', () => {
+  const input=[{id:'small',angle:0,ring:'base',scale:.6},{id:'large',angle:180,ring:'base',scale:1.6},{id:'legacy',angle:90,ring:'base'}];
+  const original=structuredClone(input);
+  const normal=layoutLabels(input,{degrees:false,scale:1});
+  const enlarged=layoutLabels(input,{degrees:false,scale:1.5});
+  const width=(layout,id)=>{const box=layout.get(id).box;return box.right-box.left;};
+  for(const p of input) assert.ok(Math.abs(width(enlarged,p.id)/width(normal,p.id)-1.5)<1e-9);
+  assert.ok(Math.abs(width(normal,'large')/width(normal,'small')-1.6/.6)<1e-9);
+  assert.ok(Math.abs(width(normal,'legacy')-54)<1e-9);
+  assert.deepEqual(input,original);
+});

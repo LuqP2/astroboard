@@ -726,3 +726,24 @@ select {
 .presenting .slide-drawer{display:none}
 .presenting .workspace.with-slides{grid-template-rows:minmax(0,1fr)}
 @media(max-width:1150px){.topbar nav button{font-size:11px;padding:4px 5px}.topbar{gap:8px;padding:0 10px}.brand h1{font-size:20px}}
+
+.reset-planet-sizes{min-height:24px;padding:2px 0;border:0;background:transparent;font-size:12px;color:var(--muted)}
+
+/* Colorful chart stage, with light surrounding controls. */
+.workspace{background:#293540}
+.canvas-scroll{background:#293540}
+.slide-thumbnail{background:#293540}
+.sidebar-tabs button[aria-selected=true]{color:#795317;box-shadow:inset 0 -3px #c38a32;background:#fff6e3}
+.mode-switch button.active{background:#fff0cf;border-color:#d5ac65;color:#77521f}
+.planet-choice.active{background:#fff2d7;border-color:#c99b4e}
+.add-text{background:#f1eafa;border-color:#d5c1e8;color:#714893}
+.add-text.active{background:#e0d0f2;border-color:#9c78c1}
+.planet-size input{accent-color:#bb872c}
+.planet-size output{color:#956c28}
+.topbar{border-bottom-color:#e5bc68;background:#243b4b}
+.brand-symbol{color:#ffd164}
+.zoom-tools{background:#20303eee;border-color:#667988}
+.zoom-tools button,.zoom-tools span{color:#e0e9ed}
+.zoom-tools button:hover{background:#3d5364}
+.note-editor{border-color:#e5bc68;box-shadow:0 3px 12px #0003}
+.slide-open.active{border-color:#bc8a3b;background:#fff0cc}
